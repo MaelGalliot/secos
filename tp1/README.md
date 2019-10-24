@@ -71,5 +71,6 @@ par
 ```
 
 **Que se passe-t-il ? Pourquoi n'y a-t-il pas de faute mémoire alors que le pointeur `dst` est NULL ?**
-
+Car le pointeur pointe sur un adresse valide le début du segment de data en RW
 **Effectuez à présent une copie de 64 octets. Que se passe-t-il ?**
+Aucun problème même car on est en "god mode" du coup on peut depasser du segment de data sans problème
