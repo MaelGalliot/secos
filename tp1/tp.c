@@ -2,6 +2,7 @@
 #include <debug.h>
 #include <info.h>
 #include <segmem.h>
+#include <string.h>
 
 extern info_t *info;
 
@@ -9,8 +10,12 @@ extern info_t *info;
 #define  base(_dsc)  _dsc.base_3<<24 | _dsc.base_2<<16 | _dsc.base_1
 #define  limit(_dsc) _dsc.limit_2<<16| _dsc.limit_1
 
-/* Affichage de la GDT qui est chargé dans le noyau
- *
+//Création du tableau de descritpeur de GDT
+#define LENGTH_GDT 4
+seg_desc_t GDT[LENGTH_GDT];
+
+/* 
+ * Affichage de la GDT qui est chargé dans le noyau
  */
 void display_gdt(){
   gdt_reg_t gdtr; //Création du pointeur vers la gdt
@@ -29,14 +34,57 @@ void display_gdt(){
   }
 }
 
+/*
+ * Explication de chaque champ de la GDT
+ */
 void explain_desc_gdt(){
   debug("\n[%s] EXPLICATION DES DESCRIPTEURS DE SEGMENT \n",__func__);
   debug("\tNum : Numéro du descripteur\n\tBase : @linéaire sur 32 bits, où débute le segment en mémoire par rapport à la mémoire disponible \n\tLimit : 20  bit, sur la longueur du segment (max 4G si à 0xfffff)\n\tP(Present) : 1 bit, détermine si le segment est présent/chargé/référencé dans la mémoire\n\tDPL(Descriptor Priviliege-Level : 2 bit,  indique le niveau de privilège du segment mémoire noyau ring 0 -> 0\n\tAVL(Available To Software) : 1 bit, dispo pour le logiciel (le proc ne s'en occupe pas)\n\td/b(Default Operand Size) : 1 bit, taillle des instructions et des données manipulées. 1= 32bits 0=16bits(défaut)\n\tG(Granularity) : 1 bit, 0 si la limit est exprimé en octet, 1 en page (de 4Ko)\n\tS : 1 bit, à 0 pour les descripteur de segment (code/data) et à 1 pour les descripteur système(TSS/LDT/Gate)\n\tType : 2 bits, en fonction de S change le type de segment pointé");
   debug("\nPour plus d'info télécharger AMD64 Architecture Prgrammer's Manual Volume 2 :System Programming (cf p80)\n");
 }
 
+/*
+ * Initialise la GDT avec : un segment NULL
+ */
+void init_gdt(){
+  gdt_reg_t gdtr;   //Création du pointeur de GDT
+  gdtr.desc = GDT;  //Application de ce pointeur
+  gdtr.limit = sizeof(GDT)-1; //Appliation de la limite de la GDT
+  //Init du segment 0 - null
+  memset((void *)&GDT[0],0,sizeof(seg_desc_t));
+  set_gdtr(gdtr);//Chargement de la gdt
+}
+/*
+ * Ajout un descripteur de segment
+ */
+void add_desc_gdt(int index, uint32_t base, uint32_t limit, unsigned short type, unsigned short privilege){
+  gdt_reg_t gdtr;
+  get_gdtr(gdtr);//Chargement de la gdt
+  gdtr.desc[index].base_1 = base;
+  gdtr.desc[index].base_2 = base >> 16;
+  gdtr.desc[index].base_3 = base >> 24;
+  gdtr.desc[index].limit_1 = limit;
+  gdtr.desc[index].limit_2 = limit >> 16;
+  gdtr.desc[index].type =  type;
+  gdtr.desc[index].s = 1; //Segment de code ou de data
+  gdtr.desc[index].dpl = privilege;
+  gdtr.desc[index].p = 1; //Le descripteur est présent
+  gdtr.desc[index].d = 1; //32bit 
+  gdtr.desc[index].g = 1; //La limit est exprimee en page de 4Ko
 
+}
+
+
+/*
+ * main
+ */
 void tp(){
   display_gdt();
   explain_desc_gdt();
+  init_gdt();
+  add_desc_gdt(1,0,0xfffff,SEG_DESC_CODE_XR,0);
+  add_desc_gdt(2,0,0xfffff,SEG_DESC_DATA_RW,0);
+  add_desc_gdt(3,0x600000,32-1,SEG_DESC_DATA_RW,0);
+  display_gdt();
+
 }
