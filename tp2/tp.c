@@ -18,7 +18,14 @@ void interrupt(){
  * Handler maison de #BP (breakpoint) : interruption numéro 3
  */
 void bp_handler(){
-  debug("[%s]\n",__func__);
+  debug("[%s] @handler = %p \n",__func__,bp_handler);
+  uint32_t eip;
+  asm volatile ("mov 4(%%ebp), %0": "=r"(eip)); //On recupère la base de la pile et on décale de 4 pour avoir le sommet
+  debug("[%s] @eip = %p\n",__func__,eip);
+  
+  //Puisque c'est un handler il faut un retour iret comme pour la fin du interruption
+  asm volatile("leave");
+  asm volatile("iret"); 
 }
 /*
  * Déclanche le BP

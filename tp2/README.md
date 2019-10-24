@@ -60,7 +60,7 @@ Chaque trampoline, saute dans `idt_common` qui appelle le gestionnaire d'interru
 ### Question 3.4
 
 **Modifiez le descripteur d'interruption `(int_desc_t)` de #BP afin d'appeler `bp_handler()` la place du trampoline déjà installé. Faites un appel explicite à `bp_trigger()` dans `tp()`. Que constatez-vous ?**
-
+Une erreur puisque la fonction fait un ret et non un iret qui est le retour d'interruption normal
 ---
 
 ### Question 3.5
