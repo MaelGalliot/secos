@@ -86,5 +86,12 @@ void tp(){
   add_desc_gdt(2,0,0xfffff,SEG_DESC_DATA_RW,0);
   add_desc_gdt(3,0x600000,32-1,SEG_DESC_DATA_RW,0);
   display_gdt();
+  //Question 3
+  set_es(gdt_krn_seg_sel(3)); //Utilisation de ES abritraire
+  char src[64];
+  char *dst = 0;
+  memset(src,0xff,64);
 
+  _memcpy8(dst, src, 32);
+  //_memcpy8(dst, src, 64);
 }
