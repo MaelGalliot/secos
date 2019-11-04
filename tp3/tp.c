@@ -86,18 +86,24 @@ void add_desc_gdt(int index, uint32_t base, uint32_t limit, unsigned short type,
 }
 
 void userland(){
-   debug("[%s]",__func__);
-   asm volatile ("mov %eax, %cr0");
+  debug("[%s]",__func__);
+  asm volatile ("mov %eax, %cr0");
 }
 void load_register(){
   debug("[%s]",__func__);
+  //Le programme tournant en ring 0 on peut changer les pointeurs de data puisqu'on est à un priviliège supérieur
   set_ds(d3_sel);
   set_es(d3_sel);
   set_fs(d3_sel);
   set_gs(d3_sel);
-//  set_ss(gdt_krn_seg_sel(5));
- // fptr32_t fptr = {.segment = c3_sel, .offset = (uint32_t)userland}; 
- // farjump(fptr); 
+  //Par ailleurs, il est impossible de pouvoir exectuer un code dans un niveau de priviligèe différent du sien. Le segment de stack pointeur étant très liée au code on ne peut pas le modifier sans être ring 3
+ //  set_ss(gdt_krn_seg_sel(5)); //#GP
+
+  //Passage en ring 3
+  fptr32_t fptr; 
+  fptr.segment = c3_sel;
+  fptr.offset = (uint32_t )userland;
+  farjump(fptr); 
 
 }
 
@@ -106,7 +112,7 @@ void load_register(){
  * main
  */
 void tp(){
-  display_gdt();
+ // display_gdt();
   explain_desc_gdt();
   init_gdt();
   add_desc_gdt(1,0,0xfffff,SEG_DESC_CODE_XR,0);
