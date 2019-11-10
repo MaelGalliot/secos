@@ -3,7 +3,7 @@
 #include <info.h>
 #include <segmem.h>
 #include <string.h>
-
+#include <cr.h>
 extern info_t *info;
 
 //Mode de priviliège
@@ -106,9 +106,7 @@ void load_register(int priv_level){
     set_ss(d0_sel);
     set_ds(d0_sel); set_es(d0_sel); set_fs(d0_sel); set_gs(d0_sel);
   } else {
-    debug("Chargement des pointeurs de segment RING %d\n",priv_level);
-    set_cs(c3_sel); 
-    set_ss(d3_sel); 
+    debug("Chargement des pointeurs de segment RING %d\n",priv_level);     
     set_ds(d3_sel); set_es(d3_sel); set_fs(d3_sel); set_gs(d3_sel);
   }
 }
@@ -137,18 +135,24 @@ void display_tss(){
  */
 void init_tss(){
   //Création dans la gdt du descripteur 
-  add_desc_gdt(5,0,sizeof(tss_t),SEG_DESC_SYS_TSS_AVL_32,0);
+  add_desc_gdt(ts_idx,0,sizeof(tss_t),SEG_DESC_SYS_TSS_AVL_32,0);
   set_tr(ts_sel); //Chargement de la TSS dans le registre tr
   display_gdt();
 } 
 void add_task_tss(){
   tss_t tss;
-  //Création de la première tâche de la TSS
+  get_tr(tss);
+  //Création de la première tâche de la TSS en ajoutant les champ statique utile
   tss.s0.esp = get_ebp(); //On met à jour ebp
   tss.s0.ss = d0_sel;
-
   
 }
+
+void user1(){
+  debug("[%s]\n",__func__);
+  debug("CR0 : %x", get_cr0());
+} 
+
 
 
 /*
@@ -159,10 +163,10 @@ void tp(){
   /* CRÉATION DE LA GDT */
   explain_desc_gdt();                               //Affichage sympatoch pour comprendre la GDT
   init_gdt();                                       //Initialisation de la GDT avec le segment 0 - NULL
-  add_desc_gdt(1,0,0xfffff,SEG_DESC_CODE_XR,RING_0);//Création du segment RING 0 - CODE de 0 à 4G
-  add_desc_gdt(2,0,0xfffff,SEG_DESC_DATA_RW,RING_0);//Création du segment RING 0 - DATA de 0 à 4G
-  add_desc_gdt(3,0,0xfffff,SEG_DESC_CODE_XR,RING_3);//Création du segment RING 3 - CODE de 0 à 4G
-  add_desc_gdt(4,0,0xfffff,SEG_DESC_DATA_RW,RING_3);//Création du segment RING 3 - CODE de 0 à 4G
+  add_desc_gdt(c0_idx,0,0xfffff,SEG_DESC_CODE_XR,RING_0);//Création du segment RING 0 - CODE de 0 à 4G
+  add_desc_gdt(d0_idx,0,0xfffff,SEG_DESC_DATA_RW,RING_0);//Création du segment RING 0 - DATA de 0 à 4G
+  add_desc_gdt(c3_idx,0,0xfffff,SEG_DESC_CODE_XR,RING_3);//Création du segment RING 3 - CODE de 0 à 4G
+  add_desc_gdt(d3_idx,0,0xfffff,SEG_DESC_DATA_RW,RING_3);//Création du segment RING 3 - CODE de 0 à 4G
   //display_gdt();                                    //Affichage de la GDT
   /*****************/  
 
@@ -174,7 +178,22 @@ void tp(){
   display_tss();
   /*****************/
   
-  /* Mise à jour des pointeurs de segment CS/DS/ES/FS/GS/SS */
+  /* Mise à jour des pointeurs de segment CS/DS/ES/FS/GS/SS pour le lancement d'un tâhce RING_3 */
   load_register(RING_3);
+  /*****************/
+
+  /* Lancement d'un tâche utilisateur user1 */
+  asm volatile (
+      "push %0    \n" // ss
+      "push %%ebp \n" // esp
+      "pushf      \n" // eflags
+      "push %1    \n" // cs
+      "push %2    \n" // eip
+      "iret"
+      ::
+       "i"(d3_sel),
+       "i"(c3_sel),
+       "r"(&user1)
+      );
   /*****************/
 }
