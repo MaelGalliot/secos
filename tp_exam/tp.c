@@ -6,6 +6,22 @@
 
 extern info_t *info;
 
+//Mode de priviliège
+#define RING_3 3
+#define RING_0 0 
+
+//Selecteur de segment optimisé 
+#define c0_idx  1
+#define d0_idx  2
+#define c3_idx  4
+#define d3_idx  5
+
+#define c0_sel  gdt_krn_seg_sel(c0_idx)
+#define d0_sel  gdt_krn_seg_sel(d0_idx)
+#define c3_sel  gdt_usr_seg_sel(c3_idx)
+#define d3_sel  gdt_usr_seg_sel(d3_idx)
+#define ts_sel  gdt_krn_seg_sel(ts_idx)
+
 //Affichage
 #define  base(_dsc)  _dsc.base_3<<24 | _dsc.base_2<<16 | _dsc.base_1
 #define  limit(_dsc) _dsc.limit_2<<16| _dsc.limit_1
@@ -70,6 +86,26 @@ void add_desc_gdt(int index, uint32_t base, uint32_t limit, unsigned short type,
   gdtr.desc[index].g = 1; //La limit est exprimee en page de 4Ko
 }
 
+/*
+ * Chargement des pointeurs de segment
+ * Pour rappel, étant en ring 0 : 
+ *    - On peut modifier de la data  dans un segment data en RING_0 ou RING_3
+ *    - On peut modifier du code dans un segment RING_0 (uniquement)
+ */
+void load_register(int priv_level){
+  debug("[%s] : ",__func__);
+  if(priv_level==RING_0){
+    debug("Chargement des pointeurs de segment RING %d\n",priv_level); 
+    set_cs(c0_sel); 
+    set_ss(d0_sel);
+    set_ds(d0_sel); set_es(d0_sel); set_fs(d0_sel); set_gs(d0_sel);
+  } else {
+    debug("Chargement des pointeurs de segment RING %d\n",priv_level);
+    set_cs(c3_sel); 
+    set_ss(d3_sel); 
+    set_ds(d3_sel); set_es(d3_sel); set_fs(d3_sel); set_gs(d3_sel);
+  }
+}
 
 /*
  * main
@@ -79,13 +115,20 @@ void tp(){
   /* CRÉATION DE LA GDT */
   explain_desc_gdt();                               //Affichage sympatoch pour comprendre la GDT
   init_gdt();                                       //Initialisation de la GDT avec le segment 0 - NULL
-  add_desc_gdt(1,0,0xfffff,SEG_DESC_CODE_XR,0);     //Création du segment RING 0 - CODE de 0 à 4G
-  add_desc_gdt(2,0,0xfffff,SEG_DESC_DATA_RW,0);     //Création du segment RING 0 - DATA de 0 à 4G
-  add_desc_gdt(3,0,0xfffff,SEG_DESC_CODE_XR,3); //Création du segment RING 3 - CODE de 0 à 4G
-  add_desc_gdt(4,0,0xfffff,SEG_DESC_DATA_RW,3);     //Création du segment RING 3 - CODE de 0 à 4G
+  add_desc_gdt(1,0,0xfffff,SEG_DESC_CODE_XR,RING_0);//Création du segment RING 0 - CODE de 0 à 4G
+  add_desc_gdt(2,0,0xfffff,SEG_DESC_DATA_RW,RING_0);//Création du segment RING 0 - DATA de 0 à 4G
+  add_desc_gdt(3,0,0xfffff,SEG_DESC_CODE_XR,RING_3);//Création du segment RING 3 - CODE de 0 à 4G
+  add_desc_gdt(4,0,0xfffff,SEG_DESC_DATA_RW,RING_3);//Création du segment RING 3 - CODE de 0 à 4G
   display_gdt();                                    //Affichage de la GDT
-  /********** */  
+  /*****************/  
 
-set_es(gdt_krn_seg_sel(3)); //Utilisation de ES abritraire
-
+  /* CRÉATION DE LA TABLE TSS */
+  /*Le descripteur de la table TSS (faisant le lien entre la pile R0 et R3) 
+    Et ayant la même structure qu'un descripteur de segment, on la met à la suite de la GDT pour simplifier même si elle ne lui appartient pas cf(p.336)*/
+  
+  
+  /*****************/
+  /* Mise à jour des pointeurs de segment CS/DS/ES/FS/GS/SS */
+  load_register(RING_3);
+  /*****************/
 }
