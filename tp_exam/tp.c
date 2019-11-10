@@ -13,8 +13,9 @@ extern info_t *info;
 //Selecteur de segment optimisé 
 #define c0_idx  1
 #define d0_idx  2
-#define c3_idx  4
-#define d3_idx  5
+#define c3_idx  3
+#define d3_idx  4
+#define ts_idx  5
 
 #define c0_sel  gdt_krn_seg_sel(c0_idx)
 #define d0_sel  gdt_krn_seg_sel(d0_idx)
@@ -27,7 +28,7 @@ extern info_t *info;
 #define  limit(_dsc) _dsc.limit_2<<16| _dsc.limit_1
 
 //Création du tableau de descritpeur de GDT
-#define LENGTH_GDT 5 
+#define LENGTH_GDT 6
 seg_desc_t GDT[LENGTH_GDT];
 
 /* 
@@ -79,7 +80,12 @@ void add_desc_gdt(int index, uint32_t base, uint32_t limit, unsigned short type,
   gdtr.desc[index].limit_1 = limit;
   gdtr.desc[index].limit_2 = limit >> 16;
   gdtr.desc[index].type =  type;
-  gdtr.desc[index].s = 1; //Segment de code ou de data
+  if(type==SEG_DESC_SYS_TSS_AVL_32 || type==SEG_DESC_SYS_TSS_BUSY_32){
+    gdtr.desc[index].s = 0; //Segment TSS
+    
+  }
+  else 
+    gdtr.desc[index].s = 1; //Segment de code ou de data
   gdtr.desc[index].dpl = privilege;
   gdtr.desc[index].p = 1; //Le descripteur est présent
   gdtr.desc[index].d = 1; //32bit 
@@ -108,6 +114,44 @@ void load_register(int priv_level){
 }
 
 /*
+ * Explication des champs de la TSS
+ */
+void explain_desc_tss(){
+  debug("\n[%s] EXPLICATION DU DESCRIPTEURS DE TSS \n\n",__func__);
+  debug("Champ statique (information lu lors du switch de processus): \n\t Stack pointeur : Contient les stack pointeur de la tâche pour les priv 0/1/2\n\t CR3 : Contient entre autre l'@ de la PGD\n\t LDT : Contient le selecteurde la LDT de la tâche\n\t Bitmap I/O permission : cf 337 pas traité ici mais permet de spécifié les ports accessible par la tâche\n\n");
+  debug("Champ dynamique (lu et modifié lors du witch de processus) : \n\t Link : Contient le selecteur de TSS de la tâche précedente\n\t EIP : L'@ de la prochaine instruction à exectuer quand la tâce est restorée \n\t EFLAGS : COntient une image des flags lorsque la tâce à été suspendu (d'où la mise en place d'un contexte lors d'un changement de tâche (tp3)\n\t GeneralRegister : Contient les copies de EAX, EBX, ECX, EDX, ESP, EBP, ESI, et EDI lorsque la tâche a été suspendue\n\t SegmentRegister : COntient la copie de ES, CS, SS, DS, FS lorsque la tâche à été suspendue\n\n");
+  debug("\nPour plus d'info télécharger AMD64 Architecture Prgrammer's Manual Volume 2 :System Programming (cf p337)\n"); 
+}
+/*
+ * Affichage de la TSS de l'OS
+ */
+void display_tss(){
+  debug("\n[%s]",__func__);
+  gdt_reg_t gdtr;
+  get_gdtr(gdtr);//Chargement de la gdt
+  debug("Adresse de la TSS [%p-%p] - taille de 0x%x\n",base(gdtr.desc[ts_idx]),limit(gdtr.desc[ts_idx]), 
+                                                  (limit(gdtr.desc[ts_idx]))-(base(gdtr.desc[ts_idx])));
+}
+/*
+ * Initialise le descripteur de la TSS  
+ */
+void init_tss(){
+  //Création dans la gdt du descripteur 
+  add_desc_gdt(5,0,sizeof(tss_t),SEG_DESC_SYS_TSS_AVL_32,0);
+  set_tr(ts_sel); //Chargement de la TSS dans le registre tr
+  display_gdt();
+} 
+void add_task_tss(){
+  tss_t tss;
+  //Création de la première tâche de la TSS
+  tss.s0.esp = get_ebp(); //On met à jour ebp
+  tss.s0.ss = d0_sel;
+
+  
+}
+
+
+/*
  * main
  */
 void tp(){
@@ -119,15 +163,17 @@ void tp(){
   add_desc_gdt(2,0,0xfffff,SEG_DESC_DATA_RW,RING_0);//Création du segment RING 0 - DATA de 0 à 4G
   add_desc_gdt(3,0,0xfffff,SEG_DESC_CODE_XR,RING_3);//Création du segment RING 3 - CODE de 0 à 4G
   add_desc_gdt(4,0,0xfffff,SEG_DESC_DATA_RW,RING_3);//Création du segment RING 3 - CODE de 0 à 4G
-  display_gdt();                                    //Affichage de la GDT
+  //display_gdt();                                    //Affichage de la GDT
   /*****************/  
 
   /* CRÉATION DE LA TABLE TSS */
   /*Le descripteur de la table TSS (faisant le lien entre la pile R0 et R3) 
     Et ayant la même structure qu'un descripteur de segment, on la met à la suite de la GDT pour simplifier même si elle ne lui appartient pas cf(p.336)*/
-  
-  
+  explain_desc_tss();
+  init_tss();
+  display_tss();
   /*****************/
+  
   /* Mise à jour des pointeurs de segment CS/DS/ES/FS/GS/SS */
   load_register(RING_3);
   /*****************/
