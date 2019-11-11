@@ -166,6 +166,26 @@ void enable_pagination(){
 }
 
 /*
+ * Affichage de la pgd
+ */
+void display_pgd(){
+  debug("[%s]",__func__);
+  int i,pde_p=0;
+  cr3_reg_t cr3 = {.raw = get_cr3()}; //On récupère CR3 pour connaître l'adresse de la pgd
+  pde32_t * pgd = (pde32_t *)((cr3.addr<<4)>>4);
+  debug("Adresse de la PGD chargé dans le noyau : %p\n",cr3.addr);
+  debug("\n|-------------- PGD ---------------| <-%p\n",pgd);
+  for(i=0;i<1024;i++){
+    if(pgd[i].p){
+      pde_p++;
+      debug("| PDE:%d, Mappe les @: %p à %p | <- %p\n",i,pgd[i].addr+0x1000*i,pgd[i].addr+0x1000*i+0x1000*4,pgd[i].addr);
+    }
+  }
+  debug("|---------------------------------|\n"); 
+  debug("Nombre de PDE détéctée(s) : %d\n",pde_p);
+}
+
+/*
  * Création de la PGD (adresse abritraire de la PGD à 0x600000)
  */
 void init_pgd(){
@@ -175,16 +195,18 @@ void init_pgd(){
   pte32_t * ptb = (pte32_t *)0x601000;  //Création de la première entrée de la PGD pointant sur la PTB
   set_cr3((uint32_t)pgd); //Chargement de la PGD dans CR3
   
-  memset((void *) pgd, 0, 1024);//Clean de la PGD 
-  memset((void *) ptb, 0,1024);//Clean de la PTB
+  memset((void *) pgd, 0,0x1000);//Clean de la PGD soit 4096oct
+  memset((void *) ptb, 0,0x1000);//Clean de la PTB 
   
   /* A savoir que lors de l'activation de la pagination les adresses mappés dans cette fonction sont additionées à CR3 et multiplié par 32 (4 oct) */
   for(i=0;i<1024;i++)  //Mappage de la PGD, qui est mappé par la première entrée de la PTB
-    pg_set_entry(&ptb[0],PG_KRN|PG_RW,i);//PTB[0] mappe les adresse de [0x600000 - 0x601000] en PG_KRN et PG_RW)
+    pg_set_entry(&ptb[0],PG_KRN|PG_RW,i);//PTB[0] mappe les adresse de [0x000000 - 0x400000] en PG_KRN et PG_RW)
   for(i=0;i<1024;i++)
-    pg_set_entry(&ptb[1],PG_KRN|PG_RW,i+0x1000); //PTB[1] mappe la PTB de [0x601000 - 0x602000]
+    pg_set_entry(&ptb[1],PG_KRN|PG_RW,i+0x1000); //PTB[1] mappe la PTB de [0x400001 - 0x800000] (0x1000 * 0x4000)
 
-  pg_set_entry(&pgd[0],PG_KRN|PG_RW, page_nr(ptb));
+  pg_set_entry(&pgd[0],PG_KRN|PG_RW, page_nr(&ptb[0])); //PDE mappe de [0x000000 - 0x400000]
+  pg_set_entry(&pgd[1],PG_KRN|PG_RW, page_nr(&ptb[1])); //PDE mappe de [0x400001 - 0x800000]
+  debug("%p %d",&pgd[0],pgd[0].p);
 }   
 
 /*
@@ -216,7 +238,8 @@ void tp(){
 
   /* Activation de la pagination */
   init_pgd();
-  enable_pagination();
+  display_pgd();
+  //enable_pagination();
   /*****************/
   /* Lancement d'un tâche utilisateur user1 */
 /*  asm volatile (
