@@ -2,6 +2,7 @@
 #include <debug.h>
 #include <info.h>
 #include <segmem.h>
+#include <pagemem.h>
 #include <string.h>
 #include <cr.h>
 extern info_t *info;
@@ -153,7 +154,38 @@ void user1(){
   debug("CR0 : %x", get_cr0());
 } 
 
+/*
+ * Activation de la pagination, en ajoutant dans CR0 le flag de PG à 1
+ */
+void enable_pagination(){
+  debug("[%s]",__func__);
+  uint32_t cr0 = get_cr0(); //Récupération du registre CR0
+  cr0 |= CR0_PG; //On met à 1 les flags CR0.PG
+  set_cr0(cr0); //On charge CR0
+  debug("Activation de la pagination -  CR0 = 0x%x\n",cr0);
+}
 
+/*
+ * Création de la PGD (adresse abritraire de la PGD à 0x600000)
+ */
+void init_pgd(){
+  debug("[%s]\n",__func__);
+  int i;
+  pde32_t * pgd = (pde32_t *)0x600000; //Création du pointeur de la PGD
+  pte32_t * ptb = (pte32_t *)0x601000;  //Création de la première entrée de la PGD pointant sur la PTB
+  set_cr3((uint32_t)pgd); //Chargement de la PGD dans CR3
+  
+  memset((void *) pgd, 0, 1024);//Clean de la PGD 
+  memset((void *) ptb, 0,1024);//Clean de la PTB
+  
+  /* A savoir que lors de l'activation de la pagination les adresses mappés dans cette fonction sont additionées à CR3 et multiplié par 32 (4 oct) */
+  for(i=0;i<1024;i++)  //Mappage de la PGD, qui est mappé par la première entrée de la PTB
+    pg_set_entry(&ptb[0],PG_KRN|PG_RW,i);//PTB[0] mappe les adresse de [0x600000 - 0x601000] en PG_KRN et PG_RW)
+  for(i=0;i<1024;i++)
+    pg_set_entry(&ptb[1],PG_KRN|PG_RW,i+0x1000); //PTB[1] mappe la PTB de [0x601000 - 0x602000]
+
+  pg_set_entry(&pgd[0],PG_KRN|PG_RW, page_nr(ptb));
+}   
 
 /*
  * main
@@ -178,12 +210,16 @@ void tp(){
   display_tss();
   /*****************/
   
-  /* Mise à jour des pointeurs de segment CS/DS/ES/FS/GS/SS pour le lancement d'un tâhce RING_3 */
+  /* Mise à jour des pointeurs de segment DS/ES/FS/GS pour le lancement d'un tâche RING_3 */
   load_register(RING_3);
   /*****************/
 
+  /* Activation de la pagination */
+  init_pgd();
+  enable_pagination();
+  /*****************/
   /* Lancement d'un tâche utilisateur user1 */
-  asm volatile (
+/*  asm volatile (
       "push %0    \n" // ss
       "push %%ebp \n" // esp
       "pushf      \n" // eflags
@@ -195,5 +231,5 @@ void tp(){
        "i"(c3_sel),
        "r"(&user1)
       );
-  /*****************/
+  *****************/
 }
