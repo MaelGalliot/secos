@@ -25,7 +25,7 @@ endef
 
 define qemu
 echo "hit <ctl+a> <h> <enter>, for Qemu help"
-$(QEMU) $(QOPT)
+$(QEMU) $(QOPT) $(QDBG)
 endef
 
 define debug

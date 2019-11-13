@@ -5,6 +5,8 @@
 #include <pagemem.h>
 #include <string.h>
 #include <cr.h>
+#include <asm.h>
+
 extern info_t *info;
 
 //Mode de priviliège
@@ -31,6 +33,7 @@ extern info_t *info;
 //Création du tableau de descritpeur de GDT
 #define LENGTH_GDT 6
 seg_desc_t GDT[LENGTH_GDT];
+
 
 /* 
  * Affichage de la GDT qui est chargé dans le noyau
@@ -172,16 +175,17 @@ void display_pgd(){
   debug("[%s]",__func__);
   int i,pde_p=0;
   cr3_reg_t cr3 = {.raw = get_cr3()}; //On récupère CR3 pour connaître l'adresse de la pgd
-  pde32_t * pgd = (pde32_t *)((cr3.addr<<4)>>4);
-  debug("Adresse de la PGD chargé dans le noyau : %p\n",cr3.addr);
-  debug("\n|-------------- PGD ---------------| <-%p\n",pgd);
+  pde32_t * pgd = (pde32_t *)0x600000;
+  pde32_t * ptb = (pde32_t *)(pgd+PAGE_SIZE);
+  debug("Adresse de la PGD chargé dans le noyau (cr3.addr) : %p\n",cr3.addr<<12);
+  debug("\n|------------------ PGD -------------------| <-%p\n",pgd);
   for(i=0;i<1024;i++){
     if(pgd[i].p){
       pde_p++;
-      debug("| PDE:%d, Mappe les @: %p à %p | <- %p\n",i,pgd[i].addr+0x1000*i,pgd[i].addr+0x1000*i+0x1000*4,pgd[i].addr);
+      debug("| PDE:%d, Mappe les @: %p à %p | <- %p\n",i,ptb[i*1024].addr,ptb[i*1024].addr+PAGE_SIZE*1024,&pgd[i]);
     }
   }
-  debug("|---------------------------------|\n"); 
+  debug("|----------------------------------------|\n"); 
   debug("Nombre de PDE détéctée(s) : %d\n",pde_p);
 }
 
@@ -192,28 +196,43 @@ void init_pgd(){
   debug("[%s]\n",__func__);
   int i;
   pde32_t * pgd = (pde32_t *)0x600000; //Création du pointeur de la PGD
-  pte32_t * ptb = (pte32_t *)0x601000;  //Création de la première entrée de la PGD pointant sur la PTB
+  pde32_t * ptb0 = (pde32_t *)(pgd+PAGE_SIZE);  //Création de la première entrée de la PGD pointant sur la PTB
+  pde32_t * ptb1 = (pde32_t *)(pgd+PAGE_SIZE*2);
   set_cr3((uint32_t)pgd); //Chargement de la PGD dans CR3
   
-  memset((void *) pgd, 0,0x1000);//Clean de la PGD soit 4096oct
-  memset((void *) ptb, 0,0x1000);//Clean de la PTB 
-  
-  /* A savoir que lors de l'activation de la pagination les adresses mappés dans cette fonction sont additionées à CR3 et multiplié par 32 (4 oct) */
-  for(i=0;i<1024;i++)  //Mappage de la PGD, qui est mappé par la première entrée de la PTB
-    pg_set_entry(&ptb[0],PG_KRN|PG_RW,i);//PTB[0] mappe les adresse de [0x000000 - 0x400000] en PG_KRN et PG_RW)
-  for(i=0;i<1024;i++)
-    pg_set_entry(&ptb[1],PG_KRN|PG_RW,i+0x1000); //PTB[1] mappe la PTB de [0x400001 - 0x800000] (0x1000 * 0x4000)
+  memset((void *) pgd, 0,PAGE_SIZE);//Clean de la PGD soit 4096oct
+  memset((void *) ptb0, 0,PAGE_SIZE);//Clean de la PTB 
+  memset((void *) ptb1, 0,PAGE_SIZE);//Clean de la PTB 
+  //for(i=0;i<1024;i++)
+  //  debug("&pgd[%d]=%p, ptb[%d].p = %d\n",i,&pgd[i],i,pgd[i].p); 
 
-  pg_set_entry(&pgd[0],PG_KRN|PG_RW, page_nr(&ptb[0])); //PDE mappe de [0x000000 - 0x400000]
-  pg_set_entry(&pgd[1],PG_KRN|PG_RW, page_nr(&ptb[1])); //PDE mappe de [0x400001 - 0x800000]
-  debug("%p %d",&pgd[0],pgd[0].p);
+  /* A savoir que lors de l'activation de la pagination les adresses mappés dans cette fonction sont additionées à CR3 et multiplié par 32 (4 oct) */
+  for(i=0;i<1024;i++){  //Mappage de la PGD, qui est mappé par la première entrée de la PTB
+    pg_set_entry(&ptb0[i],PG_KRN|PG_RW,i);//PTB[0] mappe les adresse de [0x000000 - 0x400000] en PG_KRN et PG_RW)
+    //debug("pgd[0].ptb[%d].addr = %p (%p),  ptb[%d].p = %d\n",i,ptb[i].addr,ptb[i].addr<<12,i,ptb[i].p); 
+  }
+
+  pg_set_entry(&pgd[0],PG_KRN|PG_RW, page_nr(&ptb0[0])); //PDE mappe de [0x000000 - 0x400000]
+
+  for(i=0;i<1024;i++){
+    pg_set_entry(&ptb1[i],PG_KRN|PG_RW,i+0x400); //PTB[1] mappe la PTB de [0x400001 - 0x800000] (0x1000 * 0x4000)
+    //debug("pgd[1].ptb[%d].addr = %p (%p),  ptb[%d].p = %d\n",i,ptb[i].addr,ptb[i].addr<<12,i,ptb[i].p); 
+  }
+
+  pg_set_entry(&pgd[1],PG_KRN|PG_RW, page_nr(&ptb1[0])); //PDE mappe de [0x400001 - 0x800000]
+
+  for(i=0;i<1024;i++){
+    if(pgd[i].p)
+      debug("PDE initialisée %d : @pde = %p, @ptb = %p, pde.p = %d\n",i,&pgd[i],pgd[i].addr,pgd[i].p); 
+  }
 }   
 
 /*
  * main
  */
 void tp(){
-  
+ 
+  force_interrupts_on(); 
   /* CRÉATION DE LA GDT */
   explain_desc_gdt();                               //Affichage sympatoch pour comprendre la GDT
   init_gdt();                                       //Initialisation de la GDT avec le segment 0 - NULL
@@ -238,11 +257,11 @@ void tp(){
 
   /* Activation de la pagination */
   init_pgd();
+  enable_pagination();
   display_pgd();
-  //enable_pagination();
-  /*****************/
+/*****************/
   /* Lancement d'un tâche utilisateur user1 */
-/*  asm volatile (
+  asm volatile (
       "push %0    \n" // ss
       "push %%ebp \n" // esp
       "pushf      \n" // eflags
@@ -254,5 +273,4 @@ void tp(){
        "i"(c3_sel),
        "r"(&user1)
       );
-  *****************/
 }
