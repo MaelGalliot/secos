@@ -6,6 +6,7 @@
 #include <string.h>
 #include <cr.h>
 #include <asm.h>
+#include <intr.h>
 
 extern info_t *info;
 
@@ -157,12 +158,42 @@ void tss_change_s0_esp(uint32_t task_esp){
   //Création de la première tâche de la TSS en ajoutant les champ statique utile
   tss.s0.esp = task_esp; //On met à jour ebp
 }
-
+/*
+ * Gestion du syscall avec des arguments
+ */
+void syscall_isr(){
+   asm volatile (
+      "leave ; pusha        \n"
+      "mov %esp, %eax       \n"
+      "call syscall_handler \n"
+      "popa ; iret"
+      );
+}
+/*
+ * Hnadler de l'interruption
+ */
+void __regparm__(1) syscall_handler(int_ctx_t *ctx){
+    debug("print syscall: %s", ctx->gpr.esi);
+}
+/*
+ * Création de l'interruption permettant un affichage même en ring3
+ */
+void debug_int48(){
+  int_desc_t *dsc;
+  idt_reg_t idtr;
+  get_idtr(idtr);
+  dsc = &idtr.desc[48]; //Ajout du descripteur d'int dans idt 48
+  
+  dsc->dpl =3; //Appelable en ring 3  
+  //Mise en place du handler
+  dsc->offset_1 = (uint16_t)((uint32_t)syscall_isr);
+  dsc->offset_2 = (uint16_t)(((uint32_t)syscall_isr)>>16);
+}
 void user1(){
-  int * counter=(int *)ADDR_TASK_USER1_DATA;
+  //int * counter=(int *)ADDR_TASK_USER1_DATA;
   while(1){
-    *counter+=1;
-    
+    //*counter+=1;
+    //asm volatile("int $48"::"S"("test\n")); 
   };
   return;
 } 
@@ -340,6 +371,7 @@ void tp(){
       "push %3 \n" //On push EFLAGS
       "push %4 \n" //On push CS
       "push %5 \n" //On push EIP
+      "iret"
       ::
        "r"(task1.kernel_stack),
        "r"(task1.ss_task),
