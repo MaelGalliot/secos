@@ -232,15 +232,14 @@ void init_pgd(){
 
   pg_set_entry(&pgd[1],PG_KRN|PG_RW, page_nr(&ptb1[0])); //PDE mappe de [0x400001 - 0x800000]
 
-  for(i=0;i<1024;i++){
-    if(pgd[i].p)
-      debug("PDE initialisée %d : @pde = %p, @ptb = %p, pde.p = %d\n",i,&pgd[i],pgd[i].addr,pgd[i].p); 
-  }
 
   //Init de la page USER1
   pde32_t * ptb_user1 = (pde32_t *)(pgd+PAGE_SIZE*3);
   memset((void *) ptb_user1, 0, PAGE_SIZE);//Clean de la ptb
-  
+ 
+  pg_set_entry(&pgd[2],PG_KRN|PG_RW, page_nr(&ptb_user1[0])); //PDE mappe de [0x400001 - 0x800000]
+
+ 
   pte32_t * pte_task_data = (pte32_t *)ADDR_TASK_USER1_DATA;
   pte32_t * pte_task_code = (pte32_t *)ADDR_TASK_USER1_CODE;
   pte32_t * pte_task_stack_user = (pte32_t *)ADDR_TASK_USER1_STACK_USER;
