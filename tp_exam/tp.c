@@ -311,11 +311,11 @@ void init_task_user1(task_t * task){
   //Les pages de la tâche USER1 sont mappées en statique dans la fonction 
   task->addr_task_data = ADDR_TASK_USER1_DATA;
   task->addr_task_code = ADDR_TASK_USER1_CODE;
-  task->user_stack = ADDR_TASK_USER1_STACK_USER;
-  task->kernel_stack = ADDR_TASK_USER1_STACK_KERNEL; 
+  task->user_stack = ADDR_TASK_USER1_STACK_USER+0x1000;//La pile commence à l'envers
+  task->kernel_stack = ADDR_TASK_USER1_STACK_KERNEL+0x1000; 
   task->cs_task = c3_sel;
   task->ss_task = d3_sel;
-  task->flags_task = get_flags();
+  task->flags_task= get_flags();
 
 }
 /*
@@ -371,6 +371,7 @@ void tp(){
       "push %3 \n" //On push EFLAGS
       "push %4 \n" //On push CS
       "push %5 \n" //On push EIP
+      "popa \n"
       "iret"
       ::
        "r"(task1.kernel_stack),
