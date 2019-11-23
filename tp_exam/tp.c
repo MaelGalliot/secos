@@ -34,6 +34,13 @@ extern info_t *info;
 #define LENGTH_GDT 6
 seg_desc_t GDT[LENGTH_GDT];
 
+//Addresse des tâches user1
+#define ADDR_TASK_USER1 0x801000
+#define ADDR_TASK_USER1_DATA 0x801000
+#define ADDR_TASK_USER1_CODE 0x802000
+#define ADDR_TASK_USER1_STACK_USER 0x803000
+#define ADDR_TASK_USER1_STACK_KERNEL 0x804000
+
 
 /* 
  * Affichage de la GDT qui est chargé dans le noyau
@@ -130,9 +137,10 @@ void explain_desc_tss(){
 void display_tss(){
   debug("\n[%s]",__func__);
   gdt_reg_t gdtr;
+  tss_t tss;
+  get_tr(tss);
   get_gdtr(gdtr);//Chargement de la gdt
-  debug("Adresse de la TSS [%p-%p] - taille de 0x%x\n",base(gdtr.desc[ts_idx]),limit(gdtr.desc[ts_idx]), 
-                                                  (limit(gdtr.desc[ts_idx]))-(base(gdtr.desc[ts_idx])));
+  debug("Adresse de la TSS [%p-%p] - taille de 0x%x\n",(&tss)+(base(gdtr.desc[ts_idx])),(&tss)+((limit(gdtr.desc[ts_idx]))-(base(gdtr.desc[ts_idx]))),(limit(gdtr.desc[ts_idx]))-(base(gdtr.desc[ts_idx])));
 }
 /*
  * Initialise le descripteur de la TSS  
@@ -150,11 +158,12 @@ void add_task_tss(){
   tss.s0.esp = get_ebp(); //On met à jour ebp
   tss.s0.ss = d0_sel;
   
+  
 }
 
 void user1(){
-  debug("[%s]\n",__func__);
-  debug("CR0 : %x", get_cr0());
+  while(1);
+  return;
 } 
 
 /*
@@ -180,9 +189,10 @@ void display_pgd(){
   debug("Adresse de la PGD chargé dans le noyau (cr3.addr) : %p\n",cr3.addr<<12);
   debug("\n|------------------ PGD -------------------| <-%p\n",pgd);
   for(i=0;i<1024;i++){
-    if(pgd[i].p){
+    if(pgd[i].p){ //On cherche les PDEs présentes
       pde_p++;
-      debug("| PDE:%d, Mappe les @: %p à %p | <- %p\n",i,ptb[i*1024].addr,ptb[i*1024].addr+PAGE_SIZE*1024,&pgd[i]);
+      ptb = (pde32_t *)(pgd+(PAGE_SIZE*(i+1)));
+      debug("| PDE:%d, Mappe les @: %p à %p | <- %p\n",i,(ptb[0].addr<<12),(ptb[0].addr<<12)+PAGE_SIZE*1024,&pgd[i]);
     }
   }
   debug("|----------------------------------------|\n"); 
@@ -198,6 +208,7 @@ void init_pgd(){
   pde32_t * pgd = (pde32_t *)0x600000; //Création du pointeur de la PGD
   pde32_t * ptb0 = (pde32_t *)(pgd+PAGE_SIZE);  //Création de la première entrée de la PGD pointant sur la PTB
   pde32_t * ptb1 = (pde32_t *)(pgd+PAGE_SIZE*2);
+   
   set_cr3((uint32_t)pgd); //Chargement de la PGD dans CR3
   
   memset((void *) pgd, 0,PAGE_SIZE);//Clean de la PGD soit 4096oct
@@ -225,8 +236,57 @@ void init_pgd(){
     if(pgd[i].p)
       debug("PDE initialisée %d : @pde = %p, @ptb = %p, pde.p = %d\n",i,&pgd[i],pgd[i].addr,pgd[i].p); 
   }
+
+  //Init de la page USER1
+  pde32_t * ptb_user1 = (pde32_t *)(pgd+PAGE_SIZE*3);
+  memset((void *) ptb_user1, 0, PAGE_SIZE);//Clean de la ptb
+  
+  pte32_t * pte_task_data = (pte32_t *)ADDR_TASK_USER1_DATA;
+  pte32_t * pte_task_code = (pte32_t *)ADDR_TASK_USER1_CODE;
+  pte32_t * pte_task_stack_user = (pte32_t *)ADDR_TASK_USER1_STACK_USER;
+  pte32_t * pte_task_stack_kernel = (pte32_t *)ADDR_TASK_USER1_STACK_KERNEL;
+  
+  //Mappage de la section data de user1
+  pg_set_entry(&ptb_user1[0], PG_USR | PG_RW, page_nr(pte_task_data));
+  
+  //Mappage de la section code de user1
+  pg_set_entry(&ptb_user1[1], PG_USR | PG_RO, page_nr(pte_task_code));
+
+  //Mappage de la stack user 
+  pg_set_entry(&ptb_user1[2], PG_USR | PG_RW, page_nr(pte_task_stack_user));
+
+  //Mappage de la stack kernel 
+  pg_set_entry(&ptb_user1[3], PG_KRN | PG_RW, page_nr(pte_task_stack_kernel));
+  
 }   
 
+typedef struct task_t task_t;
+struct task_t {
+  uint32_t user_stack;
+  uint32_t kernel_stack;
+  uint32_t addr_task_code;
+  uint32_t addr_task_data;
+  uint32_t cs_task;
+  uint32_t ss_task;
+  uint32_t flags_task;
+};
+/*
+ * Initilisation de la tâche user en ajoutant la tâche dans une page USER, et en ajoutant les entrées de la TSS 
+ */
+void init_task_user1(task_t * task){
+  debug("[%s]\n",__func__);
+  memset(task, 0, sizeof(task)); //On clean la zone de la tâche
+  memcpy((char *) ADDR_TASK_USER1_CODE, &user1,0x1000);//On copie le code dans la tâche dans l'adresse prévue 
+  //Les pages de la tâche USER1 sont mappées en statique dans la fonction 
+  task->addr_task_data = ADDR_TASK_USER1_DATA;
+  task->addr_task_code = ADDR_TASK_USER1_CODE;
+  task->user_stack = ADDR_TASK_USER1_STACK_USER;
+  task->kernel_stack = ADDR_TASK_USER1_STACK_KERNEL; 
+  task->cs_task = c3_sel;
+  task->ss_task = d3_sel;
+  task->flags_task = get_flags();
+
+}
 /*
  * main
  */
@@ -259,18 +319,28 @@ void tp(){
   init_pgd();
   enable_pagination();
   display_pgd();
-/*****************/
+  /*****************/
+  
+  /* Ajout du code user dans la segment de code user */
+  task_t task1;
+  
+  init_task_user1(&task1); 
+   
+  /*****************/
+  
+
+
   /* Lancement d'un tâche utilisateur user1 */
-  asm volatile (
-      "push %0    \n" // ss
-      "push %%ebp \n" // esp
+  /*asm volatile (
+      "push %0    \n" // ss pointe vers le segement de data user
+      "push $0x804000 \n" // esp pointe vers le sommet de la pile user
       "pushf      \n" // eflags
-      "push %1    \n" // cs
+      "push %1    \n" // cs pointe vers le segment de data user 
       "push %2    \n" // eip
       "iret"
       ::
        "i"(d3_sel),
        "i"(c3_sel),
-       "r"(&user1)
-      );
+       "r"(&task1)
+      );*/
 }
