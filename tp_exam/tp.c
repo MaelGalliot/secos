@@ -151,18 +151,19 @@ void init_tss(){
   set_tr(ts_sel); //Chargement de la TSS dans le registre tr
   display_gdt();
 } 
-void add_task_tss(){
+void tss_change_s0_esp(uint32_t task_esp){
   tss_t tss;
   get_tr(tss);
   //Création de la première tâche de la TSS en ajoutant les champ statique utile
-  tss.s0.esp = get_ebp(); //On met à jour ebp
-  tss.s0.ss = d0_sel;
-  
-  
+  tss.s0.esp = task_esp; //On met à jour ebp
 }
 
 void user1(){
-  while(1);
+  int * counter=(int *)ADDR_TASK_USER1_DATA;
+  while(1){
+    *counter+=1;
+    
+  };
   return;
 } 
 
@@ -330,16 +331,21 @@ void tp(){
 
 
   /* Lancement d'un tâche utilisateur user1 */
-  /*asm volatile (
-      "push %0    \n" // ss pointe vers le segement de data user
-      "push $0x804000 \n" // esp pointe vers le sommet de la pile user
-      "pushf      \n" // eflags
-      "push %1    \n" // cs pointe vers le segment de data user 
-      "push %2    \n" // eip
-      "iret"
+  tss_change_s0_esp(task1.kernel_stack);
+  asm volatile (
+      "mov %0,%%esp  \n" // On met à jour la stack kernel user1
+      
+      "push %1 \n" //On push ss
+      "push %2 \n" //On push esp
+      "push %3 \n" //On push EFLAGS
+      "push %4 \n" //On push CS
+      "push %5 \n" //On push EIP
       ::
-       "i"(d3_sel),
-       "i"(c3_sel),
-       "r"(&task1)
-      );*/
+       "r"(task1.kernel_stack),
+       "r"(task1.ss_task),
+       "r"(task1.user_stack),
+       "r"(task1.flags_task),
+       "r"(task1.cs_task),
+       "r"(task1.addr_task_code)
+      );
 }
