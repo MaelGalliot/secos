@@ -8,24 +8,16 @@
 #include <asm.h>
 #include <intr.h>
 
+/*
+** My files : task.c | task.h
+ */
+#include <task.h>
+
 extern info_t *info;
 
 //Mode de priviliège
 #define RING_3 3
 #define RING_0 0 
-
-//Selecteur de segment optimisé 
-#define c0_idx  1
-#define d0_idx  2
-#define c3_idx  3
-#define d3_idx  4
-#define ts_idx  5
-
-#define c0_sel  gdt_krn_seg_sel(c0_idx)
-#define d0_sel  gdt_krn_seg_sel(d0_idx)
-#define c3_sel  gdt_usr_seg_sel(c3_idx)
-#define d3_sel  gdt_usr_seg_sel(d3_idx)
-#define ts_sel  gdt_krn_seg_sel(ts_idx)
 
 //Affichage
 #define  base(_dsc)  _dsc.base_3<<24 | _dsc.base_2<<16 | _dsc.base_1
@@ -34,13 +26,6 @@ extern info_t *info;
 //Création du tableau de descritpeur de GDT
 #define LENGTH_GDT 6
 seg_desc_t GDT[LENGTH_GDT];
-
-//Addresse des tâches user1
-#define ADDR_TASK_USER1 0x801000
-#define ADDR_TASK_USER1_DATA 0x801000
-#define ADDR_TASK_USER1_CODE 0x802000
-#define ADDR_TASK_USER1_STACK_USER 0x803000
-#define ADDR_TASK_USER1_STACK_KERNEL 0x804000
 
 
 /* 
@@ -152,12 +137,7 @@ void init_tss(){
   set_tr(ts_sel); //Chargement de la TSS dans le registre tr
   display_gdt();
 } 
-void tss_change_s0_esp(uint32_t task_esp){
-  tss_t tss;
-  get_tr(tss);
-  //Création de la première tâche de la TSS en ajoutant les champ statique utile
-  tss.s0.esp = task_esp; //On met à jour ebp
-}
+
 /*
  * Gestion du syscall avec des arguments
  */
@@ -189,14 +169,7 @@ void debug_int48(){
   dsc->offset_1 = (uint16_t)((uint32_t)syscall_isr);
   dsc->offset_2 = (uint16_t)(((uint32_t)syscall_isr)>>16);
 }
-void user1(){
-  //int * counter=(int *)ADDR_TASK_USER1_DATA;
-  while(1){
-    //*counter+=1;
-    //asm volatile("int $48"::"S"("test\n")); 
-  };
-  return;
-} 
+
 
 /*
  * Activation de la pagination, en ajoutant dans CR0 le flag de PG à 1
@@ -266,58 +239,52 @@ void init_pgd(){
 
 
   //Init de la page USER1
-  pde32_t * ptb_user1 = (pde32_t *)(pgd+PAGE_SIZE*3);
-  memset((void *) ptb_user1, 0, PAGE_SIZE);//Clean de la ptb
+  pde32_t * ptb_user = (pde32_t *)(pgd+PAGE_SIZE*3);
+  memset((void *) ptb_user, 0, PAGE_SIZE);//Clean de la ptb
  
-  pg_set_entry(&pgd[2],PG_KRN|PG_RW, page_nr(&ptb_user1[0])); //PDE mappe de [0x400001 - 0x800000]
+  pg_set_entry(&pgd[2],PG_KRN|PG_RW, page_nr(&ptb_user[0])); //PDE mappe de [0x400001 - 0x800000]
 
  
-  pte32_t * pte_task_data = (pte32_t *)ADDR_TASK_USER1_DATA;
-  pte32_t * pte_task_code = (pte32_t *)ADDR_TASK_USER1_CODE;
-  pte32_t * pte_task_stack_user = (pte32_t *)ADDR_TASK_USER1_STACK_USER;
-  pte32_t * pte_task_stack_kernel = (pte32_t *)ADDR_TASK_USER1_STACK_KERNEL;
+  pte32_t * pte_task_data_user1 = (pte32_t *)ADDR_TASK_USER1_DATA;
+  pte32_t * pte_task_code_user1 = (pte32_t *)ADDR_TASK_USER1_CODE;
+  pte32_t * pte_task_stack_user1 = (pte32_t *)ADDR_TASK_USER1_STACK_USER;
+  pte32_t * pte_task_stack_kernel_user1 = (pte32_t *)ADDR_TASK_USER1_STACK_KERNEL;
   
   //Mappage de la section data de user1
-  pg_set_entry(&ptb_user1[0], PG_USR | PG_RW, page_nr(pte_task_data));
+  pg_set_entry(&ptb_user[0], PG_USR | PG_RW, page_nr(pte_task_data_user1));
   
   //Mappage de la section code de user1
-  pg_set_entry(&ptb_user1[1], PG_USR | PG_RO, page_nr(pte_task_code));
+  pg_set_entry(&ptb_user[1], PG_USR | PG_RO, page_nr(pte_task_code_user1));
 
   //Mappage de la stack user 
-  pg_set_entry(&ptb_user1[2], PG_USR | PG_RW, page_nr(pte_task_stack_user));
+  pg_set_entry(&ptb_user[2], PG_USR | PG_RW, page_nr(pte_task_stack_user1));
 
   //Mappage de la stack kernel 
-  pg_set_entry(&ptb_user1[3], PG_KRN | PG_RW, page_nr(pte_task_stack_kernel));
+  pg_set_entry(&ptb_user[3], PG_KRN | PG_RW, page_nr(pte_task_stack_kernel_user1));
+  
+ 
+  pte32_t * pte_task_data_user2 = (pte32_t *)ADDR_TASK_USER2_DATA;
+  pte32_t * pte_task_code_user2 = (pte32_t *)ADDR_TASK_USER2_CODE;
+  pte32_t * pte_task_stack_user2 = (pte32_t *)ADDR_TASK_USER2_STACK_USER;
+  pte32_t * pte_task_stack_kernel_user2 = (pte32_t *)ADDR_TASK_USER2_STACK_KERNEL;
+  
+  //Mappage de la section data de USER2
+  pg_set_entry(&ptb_user[4], PG_USR | PG_RW, page_nr(pte_task_data_user2));
+  
+  //Mappage de la section code de USER2
+  pg_set_entry(&ptb_user[5], PG_USR | PG_RO, page_nr(pte_task_code_user2));
+
+  //Mappage de la stack user 
+  pg_set_entry(&ptb_user[6], PG_USR | PG_RW, page_nr(pte_task_stack_user2));
+
+  //Mappage de la stack kernel 
+  pg_set_entry(&ptb_user[7], PG_KRN | PG_RW, page_nr(pte_task_stack_kernel_user2));
+
   
 }   
 
-typedef struct task_t task_t;
-struct task_t {
-  uint32_t user_stack;
-  uint32_t kernel_stack;
-  uint32_t addr_task_code;
-  uint32_t addr_task_data;
-  uint32_t cs_task;
-  uint32_t ss_task;
-  uint32_t flags_task;
-};
-/*
- * Initilisation de la tâche user en ajoutant la tâche dans une page USER, et en ajoutant les entrées de la TSS 
- */
-void init_task_user1(task_t * task){
-  debug("[%s]\n",__func__);
-  memset(task, 0, sizeof(task)); //On clean la zone de la tâche
-  memcpy((char *) ADDR_TASK_USER1_CODE, &user1,0x1000);//On copie le code dans la tâche dans l'adresse prévue 
-  //Les pages de la tâche USER1 sont mappées en statique dans la fonction 
-  task->addr_task_data = ADDR_TASK_USER1_DATA;
-  task->addr_task_code = ADDR_TASK_USER1_CODE;
-  task->user_stack = ADDR_TASK_USER1_STACK_USER+0x1000;//La pile commence à l'envers
-  task->kernel_stack = ADDR_TASK_USER1_STACK_KERNEL+0x1000; 
-  task->cs_task = c3_sel;
-  task->ss_task = d3_sel;
-  task->flags_task= get_flags();
 
-}
+
 /*
  * main
  */
@@ -354,16 +321,14 @@ void tp(){
   
   /* Ajout du code user dans la segment de code user */
   task_t task1;
-  
-  init_task_user1(&task1); 
-   
+  task_t task2;
+
+  debug(init_user_task(&task1,&user1,ADDR_TASK_USER1_DATA,ADDR_TASK_USER1_CODE,ADDR_TASK_USER1_STACK_USER,ADDR_TASK_USER1_STACK_KERNEL)); 
+  debug(init_user_task(&task2,&user2,ADDR_TASK_USER2_DATA,ADDR_TASK_USER2_CODE,ADDR_TASK_USER2_STACK_USER,ADDR_TASK_USER2_STACK_KERNEL)); 
   /*****************/
-  
-
-
   /* Lancement d'un tâche utilisateur user1 */
   tss_change_s0_esp(task1.kernel_stack);
-  asm volatile (
+ /* asm volatile (
       "mov %0,%%esp  \n" // On met à jour la stack kernel user1
       
       "push %1 \n" //On push ss
@@ -380,5 +345,5 @@ void tp(){
        "r"(task1.flags_task),
        "r"(task1.cs_task),
        "r"(task1.addr_task_code)
-      );
+      );*/
 }

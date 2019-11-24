@@ -5,6 +5,19 @@
 #include <types.h>
 #include <gpr.h>
 
+//Selector 
+#define c0_idx  1
+#define d0_idx  2
+#define c3_idx  3
+#define d3_idx  4
+#define ts_idx  5
+
+#define c0_sel  gdt_krn_seg_sel(c0_idx)
+#define d0_sel  gdt_krn_seg_sel(d0_idx)
+#define c3_sel  gdt_usr_seg_sel(c3_idx)
+#define d3_sel  gdt_usr_seg_sel(d3_idx)
+#define ts_sel  gdt_krn_seg_sel(ts_idx)
+
 typedef struct descriptor_table_register
 {
    uint16_t  limit;
