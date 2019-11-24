@@ -1,37 +1,43 @@
 #include <pagemem.h>
 #include <debug.h>
 #include <cr.h>
-#include <paging.h>
+#include <gdt.h>
 #include <map_of_mem.h>
 
-/*
- * Display of current PGD in kernel
- */
-void display_pgd(void){
-  debug("[%s] ",__func__);
-  int i;
-  cr3_reg_t cr3 = {.raw = get_cr3()}; /* CR3 contains address of PGD*/
-  pde32_t * pgd = (pde32_t *) ADDR_GDT;
-  pde32_t * ptb = (pde32_t *)(pgd+PAGE_SIZE);
-  debug("Adress of the PGD load in kernel (cr3.addr) : %p",cr3.addr<<12);
-  debug("\n|------------------ PGD -------------------| <-%p\n",pgd);
-  for(i=0;i<1024;i++){
-    if(pgd[i].p){ //On cherche les PDEs présentes
-      ptb = (pde32_t *)(pgd+(PAGE_SIZE*(i+1)));
-      debug("| PDE:%d, Mapping addr: %p à %p | <- %p\n",i,(ptb[0].addr<<12),(ptb[0].addr<<12)+PAGE_SIZE*1024,&pgd[i]);
-    }
-  }
-  debug("|------------------------------------------|\n\n"); 
-}
+seg_desc_t GDT[LENGTH_GDT];
 
 /*
- * Enable paging, CR0.PG = 1
+ * Initialise la GDT avec un le premier descritpeur de segment NULL
  */
-void enable_paging(void){
-  debug("[%s]",__func__);
-  uint32_t cr0 = get_cr0(); /* Get CR0 */
-  set_cr0(cr0 |= CR0_PG);   /* Load CR0 with CR0.PG = 1*/
-  debug(" Enable of paging -  CR0 = 0x%x\n\n",cr0);
+void init_gdt(){
+  gdt_reg_t gdtr;   //Création du pointeur de GDT
+  gdtr.desc = GDT;  //Application de ce pointeur
+  gdtr.limit = sizeof(GDT)-1; //Appliation de la limite de la GDT
+  memset((void *)&GDT[0],0,sizeof(seg_desc_t)); //Init du segment 0 à null
+  set_gdtr(gdtr);//Chargement de la gdt
+}
+/*
+ * Ajout un descripteur de segment
+ */
+void add_desc_gdt(int index, uint32_t base, uint32_t limit, unsigned short type, unsigned short privilege){
+  gdt_reg_t gdtr;
+  get_gdtr(gdtr);//Chargement de la gdt
+  gdtr.desc[index].base_1 = base;
+  gdtr.desc[index].base_2 = base >> 16;
+  gdtr.desc[index].base_3 = base >> 24;
+  gdtr.desc[index].limit_1 = limit;
+  gdtr.desc[index].limit_2 = limit >> 16;
+  gdtr.desc[index].type =  type;
+  if(type==SEG_DESC_SYS_TSS_AVL_32 || type==SEG_DESC_SYS_TSS_BUSY_32){
+    gdtr.desc[index].s = 0; //Segment TSS
+    
+  }
+  else 
+    gdtr.desc[index].s = 1; //Segment de code ou de data
+  gdtr.desc[index].dpl = privilege;
+  gdtr.desc[index].p = 1; //Le descripteur est présent
+  gdtr.desc[index].d = 1; //32bit 
+  gdtr.desc[index].g = 1; //La limit est exprimee en page de 4Ko
 }
 
 /*
@@ -75,7 +81,7 @@ void init_pgd(void){
   pte32_t * pte_task_stack_user = (pte32_t *)ADDR_TASK_USER1_STACK_USER;
   pte32_t * pte_task_stack_kernel_user = (pte32_t *)ADDR_TASK_USER1_STACK_KERNEL;
   
-  //Mapping of data user1
+  //Mapping of share data user1/user2
   pg_set_entry(&ptb_user[0], PG_USR | PG_RW, page_nr(pte_task_data_user));
   
   //Mapping of code user1
@@ -92,10 +98,7 @@ void init_pgd(void){
   pte_task_code_user = (pte32_t *)ADDR_TASK_USER2_CODE;
   pte_task_stack_user = (pte32_t *)ADDR_TASK_USER2_STACK_USER;
   pte_task_stack_kernel_user = (pte32_t *)ADDR_TASK_USER2_STACK_KERNEL;
-  
-  //Mapping of data user2
-  pg_set_entry(&ptb_user[4], PG_USR | PG_RW, page_nr(pte_task_data_user));
-  
+    
   //Mapping of code user2
   pg_set_entry(&ptb_user[5], PG_USR | PG_RO, page_nr(pte_task_code_user));
 

@@ -9,17 +9,17 @@
 
 /* Address of task user in memory */
 #define ADDR_TASK_USER1                 0x801000                      /*   TASK 1   */
-#define ADDR_TASK_USER1_DATA            ADDR_TASK_USER1 + PAGE_SIZE   /* |  DATA  | <-- 0x801000 */
-#define ADDR_TASK_USER1_CODE            ADDR_TASK_USER1 + 2*PAGE_SIZE /* |  CODE  | <-- 0x802000 */
-#define ADDR_TASK_USER1_STACK_USER      ADDR_TASK_USER1 + 3*PAGE_SIZE /* | USTACK | <-- 0x803000 */
-#define ADDR_TASK_USER1_STACK_KERNEL    ADDR_TASK_USER1 + 4*PAGE_SIZE /* | KSTACK | <-- 0x804000 */
+#define ADDR_TASK_USER1_DATA            ADDR_TASK_USER1               /* |  DATA  | <-- 0x801000 */
+#define ADDR_TASK_USER1_CODE            ADDR_TASK_USER1 + PAGE_SIZE   /* |  CODE  | <-- 0x802000 */
+#define ADDR_TASK_USER1_STACK_USER      ADDR_TASK_USER1 + 2*PAGE_SIZE /* | USTACK | <-- 0x803000 */
+#define ADDR_TASK_USER1_STACK_KERNEL    ADDR_TASK_USER1 + 3*PAGE_SIZE /* | KSTACK | <-- 0x804000 */
 
 /* Address of task user in memory */
-#define ADDR_TASK_USER2                 0x806000                    /*   TASK 2   */
-#define ADDR_TASK_USER2_DATA            ADDR_TASK_USER1_DATA        /* |  DATA  | <-- 0x801000 */
-#define ADDR_TASK_USER2_CODE            ADDR_TASK_USER2 + 2*PAGE_SIZE /* |  CODE  | <-- 0x807000 */
-#define ADDR_TASK_USER2_STACK_USER      ADDR_TASK_USER2 + 3*PAGE_SIZE /* | USTACK | <-- 0x808000 */
-#define ADDR_TASK_USER2_STACK_KERNEL    ADDR_TASK_USER2 + 4*PAGE_SIZE /* | KSTACK | <-- 0x809000 */
+#define ADDR_TASK_USER2                 0x806000                      /*   TASK 2   */
+#define ADDR_TASK_USER2_DATA            ADDR_TASK_USER1_DATA          /* |  DATA  | <-- 0x801000 */
+#define ADDR_TASK_USER2_CODE            ADDR_TASK_USER2 + PAGE_SIZE   /* |  CODE  | <-- 0x807000 */
+#define ADDR_TASK_USER2_STACK_USER      ADDR_TASK_USER2 + 2*PAGE_SIZE /* | USTACK | <-- 0x808000 */
+#define ADDR_TASK_USER2_STACK_KERNEL    ADDR_TASK_USER2 + 3*PAGE_SIZE /* | KSTACK | <-- 0x809000 */
 
 
 
