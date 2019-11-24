@@ -14,8 +14,8 @@
  * | USTACK | <-- 0x808000 
  * | KSTACK | <-- 0x809000 
  */
-char * init_user_task(task_t * task, void * user_code, uint32_t addr_data, uint32_t addr_code, uint32_t addr_stack_user, uint32_t addr_kernel_stack){
-  debug("[%s] to [%p - %p] - RETURN : ",__func__,addr_data,addr_kernel_stack);
+void init_user_task(task_t * task, void * user_code, uint32_t addr_data, uint32_t addr_code, uint32_t addr_stack_user, uint32_t addr_kernel_stack){
+  debug("[%s] to [%p - %p] \n",__func__,addr_data,addr_kernel_stack);
 
   memcpy((char *) addr_code, &user_code, PAGE_SIZE);    /* Copy the user code to section code of task */
 
@@ -26,8 +26,6 @@ char * init_user_task(task_t * task, void * user_code, uint32_t addr_data, uint3
   task->cs_task         = c3_sel;
   task->ss_task         = d3_sel;
   task->flags_task      = get_flags();
-
-  return "SUCCESS \n";
 }
 
 /*

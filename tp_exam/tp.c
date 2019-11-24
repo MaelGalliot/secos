@@ -7,11 +7,12 @@
 #include <cr.h>
 #include <asm.h>
 #include <intr.h>
-
+#include <map_of_mem.h>
 /*
-** My files : task.c | task.h
+** My files : task.c | task.h, paging.c | paging.h
  */
 #include <task.h>
+#include <paging.h>
 
 extern info_t *info;
 
@@ -171,117 +172,6 @@ void debug_int48(){
 }
 
 
-/*
- * Activation de la pagination, en ajoutant dans CR0 le flag de PG à 1
- */
-void enable_pagination(){
-  debug("[%s]",__func__);
-  uint32_t cr0 = get_cr0(); //Récupération du registre CR0
-  cr0 |= CR0_PG; //On met à 1 les flags CR0.PG
-  set_cr0(cr0); //On charge CR0
-  debug("Activation de la pagination -  CR0 = 0x%x\n",cr0);
-}
-
-/*
- * Affichage de la pgd
- */
-void display_pgd(){
-  debug("[%s]",__func__);
-  int i,pde_p=0;
-  cr3_reg_t cr3 = {.raw = get_cr3()}; //On récupère CR3 pour connaître l'adresse de la pgd
-  pde32_t * pgd = (pde32_t *)0x600000;
-  pde32_t * ptb = (pde32_t *)(pgd+PAGE_SIZE);
-  debug("Adresse de la PGD chargé dans le noyau (cr3.addr) : %p\n",cr3.addr<<12);
-  debug("\n|------------------ PGD -------------------| <-%p\n",pgd);
-  for(i=0;i<1024;i++){
-    if(pgd[i].p){ //On cherche les PDEs présentes
-      pde_p++;
-      ptb = (pde32_t *)(pgd+(PAGE_SIZE*(i+1)));
-      debug("| PDE:%d, Mappe les @: %p à %p | <- %p\n",i,(ptb[0].addr<<12),(ptb[0].addr<<12)+PAGE_SIZE*1024,&pgd[i]);
-    }
-  }
-  debug("|----------------------------------------|\n"); 
-  debug("Nombre de PDE détéctée(s) : %d\n",pde_p);
-}
-
-/*
- * Création de la PGD (adresse abritraire de la PGD à 0x600000)
- */
-void init_pgd(){
-  debug("[%s]\n",__func__);
-  int i;
-  pde32_t * pgd = (pde32_t *)0x600000; //Création du pointeur de la PGD
-  pde32_t * ptb0 = (pde32_t *)(pgd+PAGE_SIZE);  //Création de la première entrée de la PGD pointant sur la PTB
-  pde32_t * ptb1 = (pde32_t *)(pgd+PAGE_SIZE*2);
-   
-  set_cr3((uint32_t)pgd); //Chargement de la PGD dans CR3
-  
-  memset((void *) pgd, 0,PAGE_SIZE);//Clean de la PGD soit 4096oct
-  memset((void *) ptb0, 0,PAGE_SIZE);//Clean de la PTB 
-  memset((void *) ptb1, 0,PAGE_SIZE);//Clean de la PTB 
-  //for(i=0;i<1024;i++)
-  //  debug("&pgd[%d]=%p, ptb[%d].p = %d\n",i,&pgd[i],i,pgd[i].p); 
-
-  /* A savoir que lors de l'activation de la pagination les adresses mappés dans cette fonction sont additionées à CR3 et multiplié par 32 (4 oct) */
-  for(i=0;i<1024;i++){  //Mappage de la PGD, qui est mappé par la première entrée de la PTB
-    pg_set_entry(&ptb0[i],PG_KRN|PG_RW,i);//PTB[0] mappe les adresse de [0x000000 - 0x400000] en PG_KRN et PG_RW)
-    //debug("pgd[0].ptb[%d].addr = %p (%p),  ptb[%d].p = %d\n",i,ptb[i].addr,ptb[i].addr<<12,i,ptb[i].p); 
-  }
-
-  pg_set_entry(&pgd[0],PG_KRN|PG_RW, page_nr(&ptb0[0])); //PDE mappe de [0x000000 - 0x400000]
-
-  for(i=0;i<1024;i++){
-    pg_set_entry(&ptb1[i],PG_KRN|PG_RW,i+0x400); //PTB[1] mappe la PTB de [0x400001 - 0x800000] (0x1000 * 0x4000)
-    //debug("pgd[1].ptb[%d].addr = %p (%p),  ptb[%d].p = %d\n",i,ptb[i].addr,ptb[i].addr<<12,i,ptb[i].p); 
-  }
-
-  pg_set_entry(&pgd[1],PG_KRN|PG_RW, page_nr(&ptb1[0])); //PDE mappe de [0x400001 - 0x800000]
-
-
-  //Init de la page USER1
-  pde32_t * ptb_user = (pde32_t *)(pgd+PAGE_SIZE*3);
-  memset((void *) ptb_user, 0, PAGE_SIZE);//Clean de la ptb
- 
-  pg_set_entry(&pgd[2],PG_KRN|PG_RW, page_nr(&ptb_user[0])); //PDE mappe de [0x400001 - 0x800000]
-
- 
-  pte32_t * pte_task_data_user1 = (pte32_t *)ADDR_TASK_USER1_DATA;
-  pte32_t * pte_task_code_user1 = (pte32_t *)ADDR_TASK_USER1_CODE;
-  pte32_t * pte_task_stack_user1 = (pte32_t *)ADDR_TASK_USER1_STACK_USER;
-  pte32_t * pte_task_stack_kernel_user1 = (pte32_t *)ADDR_TASK_USER1_STACK_KERNEL;
-  
-  //Mappage de la section data de user1
-  pg_set_entry(&ptb_user[0], PG_USR | PG_RW, page_nr(pte_task_data_user1));
-  
-  //Mappage de la section code de user1
-  pg_set_entry(&ptb_user[1], PG_USR | PG_RO, page_nr(pte_task_code_user1));
-
-  //Mappage de la stack user 
-  pg_set_entry(&ptb_user[2], PG_USR | PG_RW, page_nr(pte_task_stack_user1));
-
-  //Mappage de la stack kernel 
-  pg_set_entry(&ptb_user[3], PG_KRN | PG_RW, page_nr(pte_task_stack_kernel_user1));
-  
- 
-  pte32_t * pte_task_data_user2 = (pte32_t *)ADDR_TASK_USER2_DATA;
-  pte32_t * pte_task_code_user2 = (pte32_t *)ADDR_TASK_USER2_CODE;
-  pte32_t * pte_task_stack_user2 = (pte32_t *)ADDR_TASK_USER2_STACK_USER;
-  pte32_t * pte_task_stack_kernel_user2 = (pte32_t *)ADDR_TASK_USER2_STACK_KERNEL;
-  
-  //Mappage de la section data de USER2
-  pg_set_entry(&ptb_user[4], PG_USR | PG_RW, page_nr(pte_task_data_user2));
-  
-  //Mappage de la section code de USER2
-  pg_set_entry(&ptb_user[5], PG_USR | PG_RO, page_nr(pte_task_code_user2));
-
-  //Mappage de la stack user 
-  pg_set_entry(&ptb_user[6], PG_USR | PG_RW, page_nr(pte_task_stack_user2));
-
-  //Mappage de la stack kernel 
-  pg_set_entry(&ptb_user[7], PG_KRN | PG_RW, page_nr(pte_task_stack_kernel_user2));
-
-  
-}   
 
 
 
@@ -315,7 +205,7 @@ void tp(){
 
   /* Activation de la pagination */
   init_pgd();
-  enable_pagination();
+  enable_paging();
   display_pgd();
   /*****************/
   
@@ -323,8 +213,8 @@ void tp(){
   task_t task1;
   task_t task2;
 
-  debug(init_user_task(&task1,&user1,ADDR_TASK_USER1_DATA,ADDR_TASK_USER1_CODE,ADDR_TASK_USER1_STACK_USER,ADDR_TASK_USER1_STACK_KERNEL)); 
-  debug(init_user_task(&task2,&user2,ADDR_TASK_USER2_DATA,ADDR_TASK_USER2_CODE,ADDR_TASK_USER2_STACK_USER,ADDR_TASK_USER2_STACK_KERNEL)); 
+  init_user_task(&task1,&user1,ADDR_TASK_USER1_DATA,ADDR_TASK_USER1_CODE,ADDR_TASK_USER1_STACK_USER,ADDR_TASK_USER1_STACK_KERNEL); 
+  init_user_task(&task2,&user2,ADDR_TASK_USER2_DATA,ADDR_TASK_USER2_CODE,ADDR_TASK_USER2_STACK_USER,ADDR_TASK_USER2_STACK_KERNEL); 
   /*****************/
   /* Lancement d'un tâche utilisateur user1 */
   tss_change_s0_esp(task1.kernel_stack);

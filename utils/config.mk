@@ -35,7 +35,8 @@ core_obj   :=	entry.o \
 		idt.o	\
 		excp.o	\
 		stack.o \
-    task.o
+    task.o \
+    paging.o
 
 objects    := $(addprefix $(CORE), $(core_obj))
 
