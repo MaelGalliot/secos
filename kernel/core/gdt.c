@@ -7,37 +7,34 @@
 seg_desc_t GDT[LENGTH_GDT];
 
 /*
- * Initialise la GDT avec un le premier descritpeur de segment NULL
+ * Init GDT with first descriptor of segment NULL
  */
 void init_gdt(){
-  gdt_reg_t gdtr;   //Création du pointeur de GDT
-  gdtr.desc = GDT;  //Application de ce pointeur
-  gdtr.limit = sizeof(GDT)-1; //Appliation de la limite de la GDT
-  memset((void *)&GDT[0],0,sizeof(seg_desc_t)); //Init du segment 0 à null
-  set_gdtr(gdtr);//Chargement de la gdt
+  gdt_reg_t gdtr;
+  gdtr.desc = GDT;
+  gdtr.limit = sizeof(GDT)-1;
+  memset((void *)&GDT[0],0,sizeof(seg_desc_t)); //Set first segment at 0
+  set_gdtr(gdtr);/* Load GDT */
 }
 /*
- * Ajout un descripteur de segment
+ * Add segment descriptor to GDT
  */
 void add_desc_gdt(int index, uint32_t base, uint32_t limit, unsigned short type, unsigned short privilege){
-  gdt_reg_t gdtr;
-  get_gdtr(gdtr);//Chargement de la gdt
+  gdt_reg_t gdtr;get_gdtr(gdtr);  /* Load GDT */
   gdtr.desc[index].base_1 = base;
   gdtr.desc[index].base_2 = base >> 16;
   gdtr.desc[index].base_3 = base >> 24;
   gdtr.desc[index].limit_1 = limit;
   gdtr.desc[index].limit_2 = limit >> 16;
   gdtr.desc[index].type =  type;
-  if(type==SEG_DESC_SYS_TSS_AVL_32 || type==SEG_DESC_SYS_TSS_BUSY_32){
-    gdtr.desc[index].s = 0; //Segment TSS
-    
-  }
+  if(type==SEG_DESC_SYS_TSS_AVL_32 || type==SEG_DESC_SYS_TSS_BUSY_32)
+    gdtr.desc[index].s = 0; /* Descriptor of TSS segment */
   else 
-    gdtr.desc[index].s = 1; //Segment de code ou de data
+    gdtr.desc[index].s = 1; /* Descriptor of code or data segment */
   gdtr.desc[index].dpl = privilege;
-  gdtr.desc[index].p = 1; //Le descripteur est présent
-  gdtr.desc[index].d = 1; //32bit 
-  gdtr.desc[index].g = 1; //La limit est exprimee en page de 4Ko
+  gdtr.desc[index].p = 1; 
+  gdtr.desc[index].d = 1; /* 32bit */
+  gdtr.desc[index].g = 1; /* limit explain in page size (4Ko) */
 }
 
 /*
