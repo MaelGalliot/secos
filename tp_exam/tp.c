@@ -93,6 +93,29 @@ void enable_paging(void){
   debug(" Enable of paging -  CR0 = 0x%x\n\n",cr0);
 }
 
+void launch_task(task_t *task){
+ tss_change_s0_esp(task->kernel_stack);
+ asm volatile (
+      "mov %0,%%esp  \n" // On met à jour la stack kernel user1
+      
+      "push %1 \n" //On push ss
+      "push %2 \n" //On push esp
+      "push %3 \n" //On push EFLAGS
+      "push %4 \n" //On push CS
+      "push %5 \n" //On push EIP
+      "popa \n"
+      "iret"
+      ::
+       "r"(task->kernel_stack),
+       "r"(task->ss_task),
+       "r"(task->user_stack),
+       "r"(task->flags_task),
+       "r"(task->cs_task),
+       "r"(task->addr_task_code)
+      );
+}
+
+
 /*
  * main
  */
@@ -135,23 +158,6 @@ void tp(){
   init_user_task(&task2,&user2,ADDR_TASK_USER2_DATA,ADDR_TASK_USER2_CODE,ADDR_TASK_USER2_STACK_USER,ADDR_TASK_USER2_STACK_KERNEL); 
   /*****************/
   /* Lancement d'un tâche utilisateur user1 */
-  tss_change_s0_esp(task1.kernel_stack);
- /* asm volatile (
-      "mov %0,%%esp  \n" // On met à jour la stack kernel user1
-      
-      "push %1 \n" //On push ss
-      "push %2 \n" //On push esp
-      "push %3 \n" //On push EFLAGS
-      "push %4 \n" //On push CS
-      "push %5 \n" //On push EIP
-      "popa \n"
-      "iret"
-      ::
-       "r"(task1.kernel_stack),
-       "r"(task1.ss_task),
-       "r"(task1.user_stack),
-       "r"(task1.flags_task),
-       "r"(task1.cs_task),
-       "r"(task1.addr_task_code)
-      );*/
+  launch_task(&task1);
+
 }
